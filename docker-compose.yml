@@ -1,0 +1,55 @@
+services:
+  web:
+    build: .
+    container_name: lopez_motos_web
+    ports:
+      - "8080:80"
+    volumes:
+      - ./src:/var/www/html
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_HOST: mysql
+      DB_NAME: lopez_motos
+      DB_USER: usuario
+      DB_PASSWORD: password
+      APP_NAME: Lopez Motos
+      OCR_SPACE_API_KEY: ${OCR_SPACE_API_KEY:-}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8082}
+      NOTIFY_CHANNEL: ${NOTIFY_CHANNEL:-webhook}
+      NOTIFY_WEBHOOK_URL: ${NOTIFY_WEBHOOK_URL:-}
+      WHATSAPP_CLOUD_TOKEN: ${WHATSAPP_CLOUD_TOKEN:-}
+      WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:-}
+  mysql:
+    image: mysql:8.0
+    container_name: lopez_motos_mysql
+    ports:
+      - "3308:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: lopez_motos
+      MYSQL_USER: usuario
+      MYSQL_PASSWORD: password
+    volumes:
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: lopez_motos_phpmyadmin
+    ports:
+      - "8081:80"
+    environment:
+      PMA_HOST: mysql
+      PMA_USER: usuario
+      PMA_PASSWORD: password
+    depends_on:
+      mysql:
+        condition: service_healthy
+volumes:
+  mysql_data:
