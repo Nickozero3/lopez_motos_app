@@ -32,21 +32,6 @@
   vehicleModes.forEach(i=>i.addEventListener('change',syncVehicle));
 
   const client=document.getElementById('existingClient'), vehicle=document.getElementById('existingVehicle');
-  const clientDetails=document.getElementById('existingClientDetails');
-  const syncClientDetails=()=>{
-    if(!client||!clientDetails)return;
-    const option=client.selectedOptions[0];
-    const hasClient=Boolean(option?.value);
-    clientDetails.hidden=!hasClient;
-    const values={
-      name:option?.dataset.clientName||'—',
-      dni:option?.dataset.clientDni||'No cargado',
-      phone:option?.dataset.clientPhone||'No cargado'
-    };
-    clientDetails.querySelectorAll('[data-client-detail]').forEach(field=>{
-      field.textContent=values[field.dataset.clientDetail]||'—';
-    });
-  };
   const syncVehicles=()=>{if(!client||!vehicle)return;let first='';[...vehicle.options].forEach(o=>{if(!o.value)return;const ok=o.dataset.clientId===client.value;o.hidden=!ok;o.disabled=!ok;if(ok&&!first)first=o.value;});if(vehicle.selectedOptions[0]?.disabled)vehicle.value=first;};
-  client?.addEventListener('change',()=>{syncClientDetails();syncVehicles();}); if(clientModes.length)syncClient(); syncVehicle(); syncClientDetails(); syncVehicles();
+  client?.addEventListener('change',syncVehicles); if(clientModes.length)syncClient(); syncVehicle(); syncVehicles();
 })();

@@ -12,7 +12,7 @@ $icon = static fn(string $path): string => '<svg viewBox="0 0 24 24" aria-hidden
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#080808">
 <title><?=h($pageTitle)?> · <?=h(app_name())?></title>
-<link rel="stylesheet" href="assets/style.css?v=20260704-budget-approval">
+<link rel="stylesheet" href="assets/style.css?v=20260704-stock-select">
 </head>
 <body class="<?=$authenticated?'app-body':'public-body'?>">
 <?php if($authenticated): ?>
