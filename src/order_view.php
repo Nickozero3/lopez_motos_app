@@ -19,11 +19,11 @@ function load_order(PDO $pdo, int $id): array
     return $order;
 }
 
-function recalculate_order_total(PDO $pdo, int $orderId): float
+function recalculate_order_total(PDO $pdo, int $orderId): int
 {
     $stmt = $pdo->prepare('SELECT COALESCE(SUM(quantity*unit_price),0) FROM budget_items WHERE order_id=?');
     $stmt->execute([$orderId]);
-    $total = (float)$stmt->fetchColumn();
+    $total = (int)$stmt->fetchColumn();
     $stmt = $pdo->prepare('UPDATE work_orders SET total_estimated=? WHERE id=?');
     $stmt->execute([$total, $orderId]);
     return $total;
@@ -63,7 +63,7 @@ function validate_vehicle_identity(PDO $pdo, string $plate, string $engine, stri
 function add_part_to_budget(PDO $pdo, int $orderId): void
 {
     $partId = (int)post('part_id');
-    $quantity = decimal_value(post('quantity'), 1);
+    $quantity = max(1, whole_number_value(post('quantity'), 1));
     if ($partId <= 0 || $quantity <= 0) throw new RuntimeException('Seleccioná un repuesto y una cantidad válida.');
 
     $stmt = $pdo->prepare('SELECT * FROM parts WHERE id=? AND active=1 FOR UPDATE');
@@ -71,11 +71,11 @@ function add_part_to_budget(PDO $pdo, int $orderId): void
     $part = $stmt->fetch();
     if (!$part) throw new RuntimeException('El repuesto no existe o está archivado.');
 
-    $before = (float)$part['stock'];
-    if ($quantity > $before) throw new RuntimeException('No hay stock suficiente. Disponible: ' . number_format($before, 2, ',', '.'));
+    $before = (int)$part['stock'];
+    if ($quantity > $before) throw new RuntimeException('No hay stock suficiente. Disponible: ' . units($before));
     $after = $before - $quantity;
     $description = clean_text(post('description')) ?: $part['name'];
-    $price = max(0, decimal_value(post('unit_price'), (float)$part['sell_price']));
+    $price = max(0, whole_number_value(post('unit_price'), (int)$part['sell_price']));
 
     $stmt = $pdo->prepare('INSERT INTO budget_items(order_id,part_id,item_type,description,quantity,unit_price,stock_applied,approved) VALUES(?,? ,"repuesto",?,?,?,?,0)');
     $stmt->execute([$orderId, $partId, $description, $quantity, $price, $quantity]);
@@ -88,8 +88,8 @@ function add_part_to_budget(PDO $pdo, int $orderId): void
 function update_budget_item(PDO $pdo, int $orderId): void
 {
     $itemId = (int)post('item_id');
-    $quantity = decimal_value(post('quantity'), 1);
-    $price = max(0, decimal_value(post('unit_price')));
+    $quantity = max(1, whole_number_value(post('quantity'), 1));
+    $price = max(0, whole_number_value(post('unit_price')));
     $description = clean_text(post('description'));
     if ($quantity <= 0 || $description === '') throw new RuntimeException('Descripción y cantidad son obligatorias.');
 
@@ -103,11 +103,11 @@ function update_budget_item(PDO $pdo, int $orderId): void
         $stmt->execute([(int)$item['part_id']]);
         $part = $stmt->fetch();
         if (!$part) throw new RuntimeException('El repuesto asociado ya no existe.');
-        $before = (float)$part['stock'];
-        $difference = $quantity - (float)$item['stock_applied'];
+        $before = (int)$part['stock'];
+        $difference = $quantity - (int)$item['stock_applied'];
         $after = $before - $difference;
         if ($after < 0) throw new RuntimeException('No hay stock suficiente para aumentar la cantidad.');
-        if (abs($difference) > 0.0001) {
+        if ($difference !== 0) {
             $stmt = $pdo->prepare('UPDATE parts SET stock=? WHERE id=?');
             $stmt->execute([$after, (int)$item['part_id']]);
             add_stock_movement((int)$item['part_id'], $orderId, $itemId, $difference > 0 ? 'salida' : 'devolucion', abs($difference), $before, $after, 'Ajuste del ítem en la orden');
@@ -130,12 +130,12 @@ function remove_budget_item(PDO $pdo, int $orderId): void
     $item = $stmt->fetch();
     if (!$item) return;
 
-    if ($item['part_id'] && (float)$item['stock_applied'] > 0) {
+    if ($item['part_id'] && (int)$item['stock_applied'] > 0) {
         $stmt = $pdo->prepare('SELECT stock FROM parts WHERE id=? FOR UPDATE');
         $stmt->execute([(int)$item['part_id']]);
         $part = $stmt->fetch();
-        $before = (float)($part['stock'] ?? 0);
-        $quantity = (float)$item['stock_applied'];
+        $before = (int)($part['stock'] ?? 0);
+        $quantity = (int)$item['stock_applied'];
         $after = $before + $quantity;
         $stmt = $pdo->prepare('UPDATE parts SET stock=? WHERE id=?');
         $stmt->execute([$after, (int)$item['part_id']]);
@@ -157,7 +157,7 @@ if (is_post()) {
             $pdo->beginTransaction();
             $order = load_order($pdo, $orderId);
             $stmt = $pdo->prepare('UPDATE work_orders SET current_status=?,priority=?,problem_reported=?,diagnosis=?,estimated_delivery=?,total_final=?,delivered_at=CASE WHEN ?="Entregada" THEN COALESCE(delivered_at,NOW()) ELSE delivered_at END WHERE id=?');
-            $stmt->execute([$status, $priority, clean_text(post('problem_reported')), nullable_text(post('diagnosis')), nullable_text(post('estimated_delivery')), max(0, decimal_value(post('total_final'))), $status, $orderId]);
+            $stmt->execute([$status, $priority, clean_text(post('problem_reported')), nullable_text(post('diagnosis')), nullable_text(post('estimated_delivery')), max(0, whole_number_value(post('total_final'))), $status, $orderId]);
             if ($status === 'Esperando aprobación del cliente') {
                 $stmt = $pdo->prepare('UPDATE work_orders SET budget_approved_at=NULL,budget_approved_total=NULL,budget_approved_ip=NULL WHERE id=?');
                 $stmt->execute([$orderId]);
@@ -198,14 +198,25 @@ if (is_post()) {
             redirect('order_view.php?id=' . $orderId);
         }
 
+        if ($action === 'test_webhook') {
+            $order = load_order($pdo, $orderId);
+            $result = send_webhook_notification(
+                $order,
+                app_name() . ' - Prueba de notificación ' . $order['code'],
+                'Esta es una prueba del webhook de ' . app_name() . '. Si recibiste este correo, la conexión está funcionando.'
+            );
+            flash($result['ok'] ? 'success' : 'error', ($result['ok'] ? 'Webhook enviado correctamente. ' : 'Falló la prueba del webhook. ') . $result['response']);
+            redirect('order_view.php?id=' . $orderId . '#tracking');
+        }
+
         if ($action === 'budget_add') {
             $description = clean_text(post('description'));
-            $quantity = decimal_value(post('quantity'), 1);
+            $quantity = max(1, whole_number_value(post('quantity'), 1));
             if ($description === '' || $quantity <= 0) throw new RuntimeException('Completá descripción y cantidad.');
             $type = in_array(post('item_type'), ['mano_obra', 'repuesto', 'otro'], true) ? post('item_type') : 'otro';
             $pdo->beginTransaction();
             $stmt = $pdo->prepare('INSERT INTO budget_items(order_id,item_type,description,quantity,unit_price,approved) VALUES(?,?,?,?,?,0)');
-            $stmt->execute([$orderId, $type, $description, $quantity, max(0, decimal_value(post('unit_price')))]);
+            $stmt->execute([$orderId, $type, $description, $quantity, max(0, whole_number_value(post('unit_price')))]);
             recalculate_order_total($pdo, $orderId);
             $approvalInvalidated = invalidate_budget_approval($pdo, $orderId);
             $pdo->commit();
@@ -260,7 +271,7 @@ $parts = $pdo->query('SELECT id,name,sku,stock,sell_price FROM parts WHERE activ
 $stmt = $pdo->prepare('SELECT * FROM notification_queue WHERE order_id=? ORDER BY created_at DESC LIMIT 10');
 $stmt->execute([$orderId]);
 $notifications = $stmt->fetchAll();
-$total = array_reduce($items, fn(float $sum, array $item): float => $sum + (float)$item['quantity'] * (float)$item['unit_price'], 0.0);
+$total = array_reduce($items, fn(int $sum, array $item): int => $sum + (int)$item['quantity'] * (int)$item['unit_price'], 0);
 $publicUrl = public_base_url() . '/track.php?t=' . $order['public_token'];
 $waMessage = 'Hola ' . $order['client_name'] . ', te compartimos el seguimiento de la orden ' . $order['code'] . ': ' . $publicUrl;
 $whatsapp = wa_link($order['phone'], $waMessage);
@@ -339,6 +350,7 @@ include 'partials/header.php';
             </div>
         </div><input id="publicTrackingUrl" value="<?= h($publicUrl) ?>" readonly>
         <div class="actions" style="margin-top:10px"><button class="btn" type="button" data-copy="<?= h($publicUrl) ?>">Copiar enlace</button><a class="btn" target="_blank" href="track.php?t=<?= h($order['public_token']) ?>">Abrir</a></div>
+        <form method="post" id="tracking" style="margin-top:10px" data-confirm="¿Enviar una notificación de prueba al webhook?"><?= csrf_field() ?><input type="hidden" name="action" value="test_webhook"><button class="btn btn-sm" type="submit">Probar webhook</button></form>
         <div class="summary-strip" style="margin-top:18px"><span>Total estimado</span><strong><?= h(money($total)) ?></strong></div><?php if ($order['budget_approved_at']): ?><div class="approval-mini is-approved"><strong>Confirmado por el cliente</strong><span><?= h(date_ar($order['budget_approved_at'], true)) ?> · <?= h(money($order['budget_approved_total'])) ?></span></div><?php elseif ($order['current_status'] === 'Esperando aprobación del cliente' && $items): ?><div class="approval-mini is-pending"><strong>Esperando confirmación</strong><span>El cliente puede aprobar desde su enlace público.</span></div><?php endif; ?>
     </aside>
 
@@ -357,7 +369,7 @@ include 'partials/header.php';
             <div class="field"><label>Diagnóstico</label><textarea name="diagnosis" placeholder="Detalle técnico de la revisión"><?= h($order['diagnosis']) ?></textarea></div>
             <div class="field span6"><label>Nota interna</label><textarea name="internal_message" placeholder="Solo visible dentro del taller"></textarea></div>
             <div class="field span6"><label>Mensaje para el cliente</label><textarea name="client_message" placeholder="Ej: Terminamos el diagnóstico y aguardamos tu aprobación."></textarea></div>
-            <div class="field span4"><label>Total final cobrado</label><input type="number" min="0" step="0.01" name="total_final" value="<?= h($order['total_final']) ?>"></div>
+            <div class="field span4"><label>Total final cobrado</label><input type="number" min="0" step="1" inputmode="numeric" name="total_final" value="<?= h((int)$order['total_final']) ?>"></div>
             <div class="field span8"><label class="checkline"><input type="checkbox" name="visible_client" checked> Mostrar esta actualización en el seguimiento</label><label class="checkline"><input type="checkbox" name="notify_client" checked> Enviar notificación automática cuando haya mensaje</label></div>
             <div class="form-actions"><button class="btn btn-primary">Guardar actualización</button></div>
         </form>
@@ -385,11 +397,11 @@ include 'partials/header.php';
         </div>
         <form method="post" class="form-grid stock-add-form"><?= csrf_field() ?><input type="hidden" name="action" value="add_stock_part">
             <div class="field"><label class="required">Repuesto</label><select name="part_id" id="partPicker" required>
-                    <option value="">Seleccionar...</option><?php foreach ($parts as $part): ?><option value="<?= (int)$part['id'] ?>" data-name="<?= h($part['name']) ?>" data-price="<?= h($part['sell_price']) ?>" data-stock="<?= h($part['stock']) ?>"><?= h($part['name'] . ' · Stock ' . $part['stock'] . ' · ' . money($part['sell_price'])) ?></option><?php endforeach; ?>
+                    <option value="">Seleccionar...</option><?php foreach ($parts as $part): ?><option value="<?= (int)$part['id'] ?>" data-name="<?= h($part['name']) ?>" data-price="<?= h((int)$part['sell_price']) ?>" data-stock="<?= h((int)$part['stock']) ?>"><?= h($part['name'] . ' · Stock ' . units($part['stock']) . ' · ' . money($part['sell_price'])) ?></option><?php endforeach; ?>
                 </select></div>
             <div class="field"><label>Descripción</label><input name="description" id="stockDescription"></div>
-            <div class="field span6"><label>Cantidad</label><input type="number" min="0.01" step="0.01" name="quantity" id="stockQuantity" value="1"></div>
-            <div class="field span6"><label>Precio venta</label><input type="number" min="0" step="0.01" name="unit_price" id="stockPrice" value="0"></div>
+            <div class="field span6"><label>Cantidad</label><input type="number" min="1" step="1" inputmode="numeric" name="quantity" id="stockQuantity" value="1"></div>
+            <div class="field span6"><label>Precio venta</label><input type="number" min="0" step="1" inputmode="numeric" name="unit_price" id="stockPrice" value="0"></div>
             <div class="form-actions"><button class="btn btn-primary">Agregar y descontar stock</button></div>
         </form>
     </section>
@@ -407,8 +419,8 @@ include 'partials/header.php';
                     <option value="otro">Otro</option>
                 </select></div>
             <div class="field span8"><label class="required">Descripción</label><input name="description" required></div>
-            <div class="field span6"><label>Cantidad</label><input type="number" min="0.01" step="0.01" name="quantity" value="1"></div>
-            <div class="field span6"><label>Precio unitario</label><input type="number" min="0" step="0.01" name="unit_price" value="0"></div>
+            <div class="field span6"><label>Cantidad</label><input type="number" min="1" step="1" inputmode="numeric" name="quantity" value="1"></div>
+            <div class="field span6"><label>Precio unitario</label><input type="number" min="0" step="1" inputmode="numeric" name="unit_price" value="0"></div>
             <div class="form-actions"><button class="btn btn-primary">Agregar al presupuesto</button></div>
         </form>
     </section>
@@ -434,10 +446,10 @@ include 'partials/header.php';
                     </thead>
                     <tbody><?php foreach ($items as $item): ?><tr>
                                 <td class="primary-cell">
-                                    <div class="table-title"><?php if ($item['photo_path']): ?><img class="thumb" src="<?= h($item['photo_path']) ?>" alt=""><?php endif; ?><span><strong><?= h($item['description']) ?></strong><?php if ($item['part_id']): ?><small>Stock disponible: <?= h(number_format((float)$item['current_stock'], 2, ',', '.')) ?></small><?php endif; ?></span></div>
+                                    <div class="table-title"><?php if ($item['photo_path']): ?><img class="thumb" src="<?= h($item['photo_path']) ?>" alt=""><?php endif; ?><span><strong><?= h($item['description']) ?></strong><?php if ($item['part_id']): ?><small>Stock disponible: <?= h(units($item['current_stock'])) ?></small><?php endif; ?></span></div>
                                 </td>
                                 <td data-label="Tipo"><span class="badge info"><?= h(strtolower((string)$item['item_type']) === 'mano_obra' ? 'Mano de obra' : ucfirst(strtolower((string)$item['item_type']))) ?></span></td>
-                                <td data-label="Cantidad"><?= h(number_format((float)$item['quantity'], 2, ',', '.')) ?></td>
+                                <td data-label="Cantidad"><?= h(units($item['quantity'])) ?></td>
                                 <td data-label="Precio"><?= h(money($item['unit_price'])) ?></td>
                                 <td data-label="Subtotal"><strong><?= h(money((float)$item['quantity'] * (float)$item['unit_price'])) ?></strong></td>
                                 <td data-label="Acciones">
@@ -453,8 +465,8 @@ include 'partials/header.php';
                                                     <option value="mano_obra" <?= $item['item_type'] === 'mano_obra' ? 'selected' : '' ?>>Mano de obra</option>
                                                     <option value="repuesto" <?= strtolower((string)$item['item_type']) === 'repuesto' ? 'selected' : '' ?>>Repuesto</option>
                                                     <option value="otro" <?= $item['item_type'] === 'otro' ? 'selected' : '' ?>>Otro</option>
-                                                </select></div><?php endif; ?><div class="field"><label>Cantidad</label><input type="number" min="0.01" step="0.01" name="quantity" value="<?= h($item['quantity']) ?>"></div>
-                                        <div class="field"><label>Precio</label><input type="number" min="0" step="0.01" name="unit_price" value="<?= h($item['unit_price']) ?>"></div><button class="btn btn-primary">Guardar</button>
+                                                </select></div><?php endif; ?><div class="field"><label>Cantidad</label><input type="number" min="1" step="1" inputmode="numeric" name="quantity" value="<?= h((int)$item['quantity']) ?>"></div>
+                                        <div class="field"><label>Precio</label><input type="number" min="0" step="1" inputmode="numeric" name="unit_price" value="<?= h((int)$item['unit_price']) ?>"></div><button class="btn btn-primary">Guardar</button>
                                     </form>
                                 </td>
                             </tr><?php endforeach; ?>

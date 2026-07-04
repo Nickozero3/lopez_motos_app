@@ -197,7 +197,7 @@ include 'partials/header.php';
                     <article class="public-budget-item">
                         <div>
                             <strong><?=h($item['description'])?></strong>
-                            <small><?=h($item['item_type'] === 'mano_obra' ? 'Mano de obra' : ucfirst($item['item_type']))?> · <?=h(number_format((float)$item['quantity'], 2, ',', '.'))?> × <?=h(money($item['unit_price']))?></small>
+                            <small><?=h(strtolower((string)$item['item_type']) === 'mano_obra' ? 'Mano de obra' : ucfirst(strtolower((string)$item['item_type'])))?> · <?=h(units($item['quantity']))?> × <?=h(money($item['unit_price']))?></small>
                         </div>
                         <strong><?=h(money($subtotal))?></strong>
                     </article>
