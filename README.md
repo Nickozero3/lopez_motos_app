@@ -120,3 +120,19 @@ Requiere una cuenta configurada en WhatsApp Business Platform de Meta.
 - Sesión regenerada al iniciar sesión.
 - Validaciones duplicadas en cliente y servidor.
 - Archivado lógico para preservar trazabilidad.
+
+## Railway
+
+Este paquete usa el Dockerfile de la raíz. En Railway no configures un Start Command manual.
+
+Variables mínimas del servicio web:
+
+- `DB_HOST=${{MySQL.MYSQLHOST}}`
+- `DB_NAME=${{MySQL.MYSQLDATABASE}}`
+- `DB_USER=${{MySQL.MYSQLUSER}}`
+- `DB_PASSWORD=${{MySQL.MYSQLPASSWORD}}`
+- `APP_NAME=Lopez Motos`
+- `APP_TIMEZONE=America/Argentina/Cordoba`
+- `PUBLIC_BASE_URL=https://${{RAILWAY_PUBLIC_DOMAIN}}`
+
+El puerto se toma automáticamente de `PORT`.
