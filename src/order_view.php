@@ -451,6 +451,7 @@ include 'partials/header.php';
                                     <form method="post" class="inline-form"><?= csrf_field() ?><input type="hidden" name="action" value="budget_update"><input type="hidden" name="item_id" value="<?= (int)$item['id'] ?>">
                                         <div class="field"><label>Descripción</label><input name="description" value="<?= h($item['description']) ?>" required></div><?php if (!$item['part_id']): ?><div class="field"><label>Tipo</label><select name="item_type">
                                                     <option value="mano_obra" <?= $item['item_type'] === 'mano_obra' ? 'selected' : '' ?>>Mano de obra</option>
+                                                    <option value="Repuesto" <?= $item['item_type'] === 'Repuesto' ? 'selected' : '' ?>>Repuesto</option>
                                                     <option value="otro" <?= $item['item_type'] === 'otro' ? 'selected' : '' ?>>Otro</option>
                                                 </select></div><?php endif; ?><div class="field"><label>Cantidad</label><input type="number" min="0.01" step="0.01" name="quantity" value="<?= h($item['quantity']) ?>"></div>
                                         <div class="field"><label>Precio</label><input type="number" min="0" step="0.01" name="unit_price" value="<?= h($item['unit_price']) ?>"></div><button class="btn btn-primary">Guardar</button>
