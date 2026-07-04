@@ -67,6 +67,9 @@ function db(): PDO
                 PDO::ATTR_EMULATE_PREPARES => false,
             ]
         );
+
+        // Railway/MySQL suele trabajar en UTC. Ajustamos esta conexión a Argentina.
+        $pdo->exec("SET time_zone = '-03:00'");
     }
 
     return $pdo;
