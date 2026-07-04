@@ -136,3 +136,17 @@ Variables mínimas del servicio web:
 - `PUBLIC_BASE_URL=https://${{RAILWAY_PUBLIC_DOMAIN}}`
 
 El puerto se toma automáticamente de `PORT`.
+
+## Inicialización automática en Railway
+
+En Docker Compose, MySQL ejecuta `db/init.sql` mediante `/docker-entrypoint-initdb.d`.
+Railway no realiza ese paso automáticamente porque la base de datos se ejecuta como un
+servicio separado. El contenedor web incluye `railway-db-init.php`, que espera la conexión
+a MySQL y ejecuta el esquema de forma idempotente antes de iniciar Apache.
+
+En los logs de un despliegue correcto debe aparecer:
+
+```text
+[db-init] Esquema verificado correctamente en la base railway.
+Syntax OK
+```

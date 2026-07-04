@@ -12,11 +12,14 @@ RUN a2enmod mpm_prefork rewrite \
     && rm -rf /var/lib/apt/lists/*
 
 COPY src/ /var/www/html/
+COPY db/init.sql /opt/lopez-motos/init.sql
+COPY railway-db-init.php /usr/local/bin/railway-db-init.php
 COPY railway-entrypoint.sh /usr/local/bin/railway-entrypoint.sh
 
 RUN chmod +x /usr/local/bin/railway-entrypoint.sh \
-    && mkdir -p /var/www/html/uploads/parts \
+    && mkdir -p /var/www/html/uploads/parts /opt/lopez-motos \
     && chown -R www-data:www-data /var/www/html/uploads \
+    && php -l /usr/local/bin/railway-db-init.php \
     && apache2ctl -t
 
 EXPOSE 8080

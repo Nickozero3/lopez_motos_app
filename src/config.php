@@ -18,24 +18,36 @@ const PRIORITIES = ['baja', 'normal', 'alta', 'urgente'];
 
 function app_name(): string { return getenv('APP_NAME') ?: 'Lopez Motos'; }
 
+function env_first(array $names, ?string $default = null): ?string
+{
+    foreach ($names as $name) {
+        $value = getenv($name);
+        if ($value !== false && trim((string)$value) !== '') {
+            return (string)$value;
+        }
+    }
+
+    return $default;
+}
+
 function db(): PDO
 {
     static $pdo;
 
     if (!$pdo) {
-        // Admite tanto las variables DB_* usadas localmente como las MYSQL*
-        // que Railway crea en el servicio.
-        $host = getenv('DB_HOST') ?: getenv('MYSQLHOST') ?: 'mysql';
-        $port = getenv('DB_PORT') ?: getenv('MYSQLPORT') ?: '3306';
-        $name = getenv('DB_NAME') ?: getenv('MYSQLDATABASE') ?: 'lopez_motos';
-        $user = getenv('DB_USER') ?: getenv('MYSQLUSER') ?: 'usuario';
+        // Acepta tanto las variables propias de la aplicación como los nombres
+        // nativos que expone el servicio MySQL de Railway.
+        $host = env_first(['DB_HOST', 'MYSQLHOST'], 'mysql');
+        $port = env_first(['DB_PORT', 'MYSQLPORT'], '3306');
+        $name = env_first(['DB_NAME', 'MYSQLDATABASE'], 'lopez_motos');
+        $user = env_first(['DB_USER', 'MYSQLUSER'], 'usuario');
+        $password = env_first(['DB_PASSWORD', 'MYSQLPASSWORD'], 'password');
 
-        $password = getenv('DB_PASSWORD');
-        if ($password === false || $password === '') {
-            $password = getenv('MYSQLPASSWORD');
-        }
-        if ($password === false) {
-            $password = 'password';
+        $isRailway = env_first(['RAILWAY_ENVIRONMENT_ID', 'RAILWAY_PROJECT_ID']) !== null;
+        if ($isRailway && ($user === 'usuario' || $password === 'password')) {
+            throw new RuntimeException(
+                'La conexión MySQL de Railway no está configurada. Añadí referencias para DB_HOST, DB_PORT, DB_NAME, DB_USER y DB_PASSWORD en el servicio web.'
+            );
         }
 
         $dsn = sprintf(
