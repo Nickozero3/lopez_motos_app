@@ -11,6 +11,9 @@ Contraseña: 123456
 
 Cambiá la contraseña inicial antes de publicar el sistema en Internet.
 
+Usar `make.com` para el envio de mails (1000 actualizaciones gratuitas)
+Usa  `https://ocr.space/` para completar con las fotos ia
+
 ## Iniciar con Docker
 
 Desde la carpeta del proyecto:
