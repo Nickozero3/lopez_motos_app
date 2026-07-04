@@ -18,57 +18,17 @@ const PRIORITIES = ['baja', 'normal', 'alta', 'urgente'];
 
 function app_name(): string { return getenv('APP_NAME') ?: 'Lopez Motos'; }
 
-function env_first(array $names, ?string $default = null): ?string
-{
-    foreach ($names as $name) {
-        $value = getenv($name);
-        if ($value !== false && trim((string)$value) !== '') {
-            return (string)$value;
-        }
-    }
-
-    return $default;
-}
-
 function db(): PDO
 {
     static $pdo;
-
     if (!$pdo) {
-        // Acepta tanto las variables propias de la aplicación como los nombres
-        // nativos que expone el servicio MySQL de Railway.
-        $host = env_first(['DB_HOST', 'MYSQLHOST'], 'mysql');
-        $port = env_first(['DB_PORT', 'MYSQLPORT'], '3306');
-        $name = env_first(['DB_NAME', 'MYSQLDATABASE'], 'lopez_motos');
-        $user = env_first(['DB_USER', 'MYSQLUSER'], 'usuario');
-        $password = env_first(['DB_PASSWORD', 'MYSQLPASSWORD'], 'password');
-
-        $isRailway = env_first(['RAILWAY_ENVIRONMENT_ID', 'RAILWAY_PROJECT_ID']) !== null;
-        if ($isRailway && ($user === 'usuario' || $password === 'password')) {
-            throw new RuntimeException(
-                'La conexión MySQL de Railway no está configurada. Añadí referencias para DB_HOST, DB_PORT, DB_NAME, DB_USER y DB_PASSWORD en el servicio web.'
-            );
-        }
-
-        $dsn = sprintf(
-            'mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4',
-            $host,
-            $port,
-            $name
-        );
-
         $pdo = new PDO(
-            $dsn,
-            $user,
-            $password,
-            [
-                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                PDO::ATTR_EMULATE_PREPARES => false,
-            ]
+            'mysql:host=' . (getenv('DB_HOST') ?: 'mysql') . ';dbname=' . (getenv('DB_NAME') ?: 'lopez_motos') . ';charset=utf8mb4',
+            getenv('DB_USER') ?: 'usuario',
+            getenv('DB_PASSWORD') ?: 'password',
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC, PDO::ATTR_EMULATE_PREPARES => false]
         );
     }
-
     return $pdo;
 }
 
@@ -106,7 +66,32 @@ function date_ar(?string $value, bool $withTime = false): string
 }
 function order_code(): string { return 'LM-' . date('ymd') . '-' . strtoupper(substr(bin2hex(random_bytes(3)), 0, 6)); }
 function token(): string { return bin2hex(random_bytes(20)); }
-function public_base_url(): string { return rtrim(getenv('PUBLIC_BASE_URL') ?: 'http://localhost:8080', '/'); }
+function public_base_url(): string
+{
+    $configuredUrl = trim((string)(getenv('PUBLIC_BASE_URL') ?: ''));
+    if ($configuredUrl !== '') {
+        return rtrim($configuredUrl, '/');
+    }
+
+    // Railway expone automáticamente el dominio público sin protocolo.
+    $railwayDomain = trim((string)(getenv('RAILWAY_PUBLIC_DOMAIN') ?: ''));
+    if ($railwayDomain !== '') {
+        return 'https://' . rtrim($railwayDomain, '/');
+    }
+
+    // Respaldo para otros servidores o proxies inversos.
+    $forwardedProto = trim((string)($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? ''));
+    $scheme = $forwardedProto !== ''
+        ? trim(explode(',', $forwardedProto)[0])
+        : ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http');
+
+    $forwardedHost = trim((string)($_SERVER['HTTP_X_FORWARDED_HOST'] ?? ''));
+    $host = $forwardedHost !== ''
+        ? trim(explode(',', $forwardedHost)[0])
+        : trim((string)($_SERVER['HTTP_HOST'] ?? 'localhost:8080'));
+
+    return $scheme . '://' . $host;
+}
 function wa_link(string $phone, string $message): string
 {
     $digits = preg_replace('/\D+/', '', $phone) ?? '';
