@@ -12,7 +12,10 @@ function load_order(PDO $pdo, int $id): array
     $stmt = $pdo->prepare('SELECT wo.*,c.name AS client_name,c.phone,c.email,c.dni,c.address,c.notes AS client_notes,v.id AS vehicle_id,v.type,v.brand,v.model,v.plate,v.year,v.cc,v.color,v.engine_number,v.chassis_number,v.km FROM work_orders wo JOIN clients c ON c.id=wo.client_id JOIN vehicles v ON v.id=wo.vehicle_id WHERE wo.id=?');
     $stmt->execute([$id]);
     $order = $stmt->fetch();
-    if (!$order) { http_response_code(404); die('Orden no encontrada.'); }
+    if (!$order) {
+        http_response_code(404);
+        die('Orden no encontrada.');
+    }
     return $order;
 }
 
@@ -174,9 +177,13 @@ if (is_post()) {
         }
 
         if ($action === 'update_identity') {
-            $name = clean_text(post('client_name')); $phone = clean_text(post('phone'));
-            $brand = clean_text(post('brand')); $model = clean_text(post('model'));
-            $plate = upper_identifier(post('plate')); $engine = upper_identifier(post('engine_number')); $chassis = upper_identifier(post('chassis_number'));
+            $name = clean_text(post('client_name'));
+            $phone = clean_text(post('phone'));
+            $brand = clean_text(post('brand'));
+            $model = clean_text(post('model'));
+            $plate = upper_identifier(post('plate'));
+            $engine = upper_identifier(post('engine_number'));
+            $chassis = upper_identifier(post('chassis_number'));
             if ($name === '' || $phone === '') throw new RuntimeException('Nombre y teléfono del cliente son obligatorios.');
             if ($brand === '' || $model === '' || $plate === '' || $engine === '' || $chassis === '') throw new RuntimeException('Marca, modelo, patente, motor y chasis son obligatorios.');
             $order = load_order($pdo, $orderId);
@@ -243,10 +250,16 @@ if (is_post()) {
 
 $order = load_order($pdo, $orderId);
 $pageTitle = $order['code'];
-$stmt = $pdo->prepare('SELECT ou.*,u.name AS user_name FROM order_updates ou LEFT JOIN users u ON u.id=ou.user_id WHERE ou.order_id=? ORDER BY ou.created_at DESC'); $stmt->execute([$orderId]); $updates = $stmt->fetchAll();
-$stmt = $pdo->prepare('SELECT bi.*,p.photo_path,p.stock AS current_stock,p.name AS part_name FROM budget_items bi LEFT JOIN parts p ON p.id=bi.part_id WHERE bi.order_id=? ORDER BY bi.id'); $stmt->execute([$orderId]); $items = $stmt->fetchAll();
+$stmt = $pdo->prepare('SELECT ou.*,u.name AS user_name FROM order_updates ou LEFT JOIN users u ON u.id=ou.user_id WHERE ou.order_id=? ORDER BY ou.created_at DESC');
+$stmt->execute([$orderId]);
+$updates = $stmt->fetchAll();
+$stmt = $pdo->prepare('SELECT bi.*,p.photo_path,p.stock AS current_stock,p.name AS part_name FROM budget_items bi LEFT JOIN parts p ON p.id=bi.part_id WHERE bi.order_id=? ORDER BY bi.id');
+$stmt->execute([$orderId]);
+$items = $stmt->fetchAll();
 $parts = $pdo->query('SELECT id,name,sku,stock,sell_price FROM parts WHERE active=1 AND stock>0 ORDER BY name')->fetchAll();
-$stmt = $pdo->prepare('SELECT * FROM notification_queue WHERE order_id=? ORDER BY created_at DESC LIMIT 10'); $stmt->execute([$orderId]); $notifications = $stmt->fetchAll();
+$stmt = $pdo->prepare('SELECT * FROM notification_queue WHERE order_id=? ORDER BY created_at DESC LIMIT 10');
+$stmt->execute([$orderId]);
+$notifications = $stmt->fetchAll();
 $total = array_reduce($items, fn(float $sum, array $item): float => $sum + (float)$item['quantity'] * (float)$item['unit_price'], 0.0);
 $publicUrl = public_base_url() . '/track.php?t=' . $order['public_token'];
 $waMessage = 'Hola ' . $order['client_name'] . ', te compartimos el seguimiento de la orden ' . $order['code'] . ': ' . $publicUrl;
@@ -255,35 +268,233 @@ $identityOpen = $error !== null && is_post() && (string)post('action') === 'upda
 
 include 'partials/header.php';
 ?>
-<div class="page-head"><div class="page-head-copy"><a class="muted" href="orders.php">← Órdenes</a><h1><?=h($order['code'])?></h1><p><?=h($order['client_name'].' · '.$order['brand'].' '.$order['model'].' · '.$order['plate'])?></p></div><div class="actions"><a class="btn btn-success" target="_blank" rel="noopener" href="<?=h($whatsapp)?>">WhatsApp</a><a class="btn" target="_blank" href="track.php?t=<?=h($order['public_token'])?>">Vista del cliente</a></div></div>
-<?php if($error):?><div class="alert alert-error"><span><?=h($error)?></span></div><?php endif;?>
-<details class="card identity-card" id="identity" data-open-on-error="<?=$identityOpen?'1':'0'?>" <?=$identityOpen?'open':''?>>
-<summary class="identity-summary" aria-label="Modificar datos del cliente y la moto">
-  <div class="identity-heading"><span class="identity-mark" aria-hidden="true">CM</span><span><strong>Cliente y moto</strong><small>Información vinculada a esta orden</small></span></div>
-  <div class="identity-overview">
-    <span class="identity-overview-item"><small>Cliente</small><strong><?=h($order['client_name'])?></strong><span>DNI: <?=h($order['dni']?:'No cargado')?> · <?=h($order['phone'])?></span></span>
-    <span class="identity-overview-item"><small>Moto</small><strong><?=h($order['brand'].' '.$order['model'])?></strong><span><?=h($order['plate'])?> · Motor <?=h($order['engine_number'])?></span></span>
-  </div>
-  <span class="btn btn-sm identity-toggle" aria-hidden="true"><span class="identity-closed-label">Modificar</span><span class="identity-open-label">Cerrar</span></span>
-</summary>
-<div class="identity-editor">
-  <div class="identity-editor-head"><div><h2>Modificar cliente y moto</h2><p>Patente, motor y chasis se guardan en mayúsculas y sin espacios.</p></div></div>
-  <form method="post" class="form-grid"><?=csrf_field()?><input type="hidden" name="action" value="update_identity"><div class="section-divider"><h2>Cliente</h2></div><div class="field span4"><label class="required">Nombre</label><input name="client_name" required value="<?=h($order['client_name'])?>"></div><div class="field span4"><label class="required">Teléfono</label><input name="phone" required value="<?=h($order['phone'])?>"></div><div class="field span4"><label>Email</label><input type="email" name="email" value="<?=h($order['email'])?>"></div><div class="field span3"><label>DNI</label><input name="dni" value="<?=h($order['dni'])?>"></div><div class="field span5"><label>Dirección</label><input name="address" value="<?=h($order['address'])?>"></div><div class="field span4"><label>Notas</label><input name="client_notes" value="<?=h($order['client_notes'])?>"></div><div class="section-divider"><h2>Moto</h2></div><div class="field span3"><label>Tipo</label><input name="type" value="<?=h($order['type'])?>"></div><div class="field span3"><label class="required">Marca</label><input name="brand" required value="<?=h($order['brand'])?>"></div><div class="field span3"><label class="required">Modelo</label><input name="model" required value="<?=h($order['model'])?>"></div><div class="field span3"><label class="required">Patente</label><input name="plate" required data-uppercase value="<?=h($order['plate'])?>"></div><div class="field span3"><label>Año</label><input name="year" value="<?=h($order['year'])?>"></div><div class="field span3"><label>Cilindrada</label><input name="cc" value="<?=h($order['cc'])?>"></div><div class="field span3"><label>Color</label><input name="color" value="<?=h($order['color'])?>"></div><div class="field span3"><label>Kilómetros</label><input type="number" min="0" name="km" value="<?=h($order['km'])?>"></div><div class="field span6"><label class="required">Número de motor</label><input name="engine_number" required data-uppercase value="<?=h($order['engine_number'])?>"></div><div class="field span6"><label class="required">Número de chasis</label><input name="chassis_number" required data-uppercase value="<?=h($order['chassis_number'])?>"></div><div class="form-actions"><a class="btn" href="client_view.php?id=<?=(int)$order['client_id']?>">Abrir ficha completa</a><button class="btn" type="button" data-close-identity>Cancelar</button><button class="btn btn-primary">Guardar cliente y moto</button></div></form>
+<div class="page-head">
+    <div class="page-head-copy"><a class="muted" href="orders.php">← Órdenes</a>
+        <h1><?= h($order['code']) ?></h1>
+        <p><?= h($order['client_name'] . ' · ' . $order['brand'] . ' ' . $order['model'] . ' · ' . $order['plate']) ?></p>
+    </div>
+    <div class="actions"><a class="btn btn-success" target="_blank" rel="noopener" href="<?= h($whatsapp) ?>">WhatsApp</a><a class="btn" target="_blank" href="track.php?t=<?= h($order['public_token']) ?>">Vista del cliente</a></div>
 </div>
+<?php if ($error): ?><div class="alert alert-error"><span><?= h($error) ?></span></div><?php endif; ?>
+<details class="card identity-card" id="identity" data-open-on-error="<?= $identityOpen ? '1' : '0' ?>" <?= $identityOpen ? 'open' : '' ?>>
+    <summary class="identity-summary" aria-label="Modificar datos del cliente y la moto">
+        <div class="identity-heading"><span class="identity-mark" aria-hidden="true">CM</span><span><strong>Cliente y moto</strong><small>Información vinculada a esta orden</small></span></div>
+        <div class="identity-overview">
+            <span class="identity-overview-item"><small>Cliente</small><strong><?= h($order['client_name']) ?></strong><span>DNI: <?= h($order['dni'] ?: 'No cargado') ?> · <?= h($order['phone']) ?></span></span>
+            <span class="identity-overview-item"><small>Moto</small><strong><?= h($order['brand'] . ' ' . $order['model']) ?></strong><span><?= h($order['plate']) ?> · Motor <?= h($order['engine_number']) ?></span></span>
+        </div>
+        <span class="btn btn-sm identity-toggle" aria-hidden="true"><span class="identity-closed-label">Modificar</span><span class="identity-open-label">Cerrar</span></span>
+    </summary>
+    <div class="identity-editor">
+        <div class="identity-editor-head">
+            <div>
+                <h2>Modificar cliente y moto</h2>
+                <p>Patente, motor y chasis se guardan en mayúsculas y sin espacios.</p>
+            </div>
+        </div>
+        <form method="post" class="form-grid"><?= csrf_field() ?><input type="hidden" name="action" value="update_identity">
+            <div class="section-divider">
+                <h2>Cliente</h2>
+            </div>
+            <div class="field span4"><label class="required">Nombre</label><input name="client_name" required value="<?= h($order['client_name']) ?>"></div>
+            <div class="field span4"><label class="required">Teléfono</label><input name="phone" required value="<?= h($order['phone']) ?>"></div>
+            <div class="field span4"><label>Email</label><input type="email" name="email" value="<?= h($order['email']) ?>"></div>
+            <div class="field span3"><label>DNI</label><input name="dni" value="<?= h($order['dni']) ?>"></div>
+            <div class="field span5"><label>Dirección</label><input name="address" value="<?= h($order['address']) ?>"></div>
+            <div class="field span4"><label>Notas</label><input name="client_notes" value="<?= h($order['client_notes']) ?>"></div>
+            <div class="section-divider">
+                <h2>Moto</h2>
+            </div>
+            <div class="field span3"><label>Tipo</label><input name="type" value="<?= h($order['type']) ?>"></div>
+            <div class="field span3"><label class="required">Marca</label><input name="brand" required value="<?= h($order['brand']) ?>"></div>
+            <div class="field span3"><label class="required">Modelo</label><input name="model" required value="<?= h($order['model']) ?>"></div>
+            <div class="field span3"><label class="required">Patente</label><input name="plate" required data-uppercase value="<?= h($order['plate']) ?>"></div>
+            <div class="field span3"><label>Año</label><input name="year" value="<?= h($order['year']) ?>"></div>
+            <div class="field span3"><label>Cilindrada</label><input name="cc" value="<?= h($order['cc']) ?>"></div>
+            <div class="field span3"><label>Color</label><input name="color" value="<?= h($order['color']) ?>"></div>
+            <div class="field span3"><label>Kilómetros</label><input type="number" min="0" name="km" value="<?= h($order['km']) ?>"></div>
+            <div class="field span6"><label class="required">Número de motor</label><input name="engine_number" required data-uppercase value="<?= h($order['engine_number']) ?>"></div>
+            <div class="field span6"><label class="required">Número de chasis</label><input name="chassis_number" required data-uppercase value="<?= h($order['chassis_number']) ?>"></div>
+            <div class="form-actions"><a class="btn" href="client_view.php?id=<?= (int)$order['client_id'] ?>">Abrir ficha completa</a><button class="btn" type="button" data-close-identity>Cancelar</button><button class="btn btn-primary">Guardar cliente y moto</button></div>
+        </form>
+    </div>
 </details>
 <div class="grid">
-<section class="card span8 hero-card order-summary-card"><div><span class="status <?=h(status_tone($order['current_status']))?>"><?=h($order['current_status'])?></span><h2 style="font-size:1.55rem;margin:16px 0 8px"><?=h($order['brand'].' '.$order['model'])?></h2><p><?=nl2br(h($order['problem_reported']))?></p></div><div class="metric-row"><div class="metric-box"><small class="muted">Prioridad</small><strong><?=h(ucfirst($order['priority']))?></strong></div><div class="metric-box"><small class="muted">Ingreso</small><strong><?=h(date_ar($order['created_at']))?></strong></div><div class="metric-box"><small class="muted">Entrega</small><strong><?=h(date_ar($order['estimated_delivery']))?></strong></div></div></section>
-<aside class="card span4"><div class="card-header"><div><h2>Seguimiento público</h2><p>Enlace individual de esta reparación.</p></div></div><input id="publicTrackingUrl" value="<?=h($publicUrl)?>" readonly><div class="actions" style="margin-top:10px"><button class="btn" type="button" data-copy="<?=h($publicUrl)?>">Copiar enlace</button><a class="btn" target="_blank" href="track.php?t=<?=h($order['public_token'])?>">Abrir</a></div><div class="summary-strip" style="margin-top:18px"><span>Total estimado</span><strong><?=h(money($total))?></strong></div><?php if($order['budget_approved_at']):?><div class="approval-mini is-approved"><strong>Confirmado por el cliente</strong><span><?=h(date_ar($order['budget_approved_at'],true))?> · <?=h(money($order['budget_approved_total']))?></span></div><?php elseif($order['current_status']==='Esperando aprobación del cliente' && $items):?><div class="approval-mini is-pending"><strong>Esperando confirmación</strong><span>El cliente puede aprobar desde su enlace público.</span></div><?php endif;?></aside>
+    <section class="card span8 hero-card order-summary-card">
+        <div><span class="status <?= h(status_tone($order['current_status'])) ?>"><?= h($order['current_status']) ?></span>
+            <h2 style="font-size:1.55rem;margin:16px 0 8px"><?= h($order['brand'] . ' ' . $order['model']) ?></h2>
+            <p><?= nl2br(h($order['problem_reported'])) ?></p>
+        </div>
+        <div class="metric-row">
+            <div class="metric-box"><small class="muted">Prioridad</small><strong><?= h(ucfirst($order['priority'])) ?></strong></div>
+            <div class="metric-box"><small class="muted">Ingreso</small><strong><?= h(date_ar($order['created_at'])) ?></strong></div>
+            <div class="metric-box"><small class="muted">Entrega</small><strong><?= h(date_ar($order['estimated_delivery'])) ?></strong></div>
+        </div>
+    </section>
+    <aside class="card span4">
+        <div class="card-header">
+            <div>
+                <h2>Seguimiento público</h2>
+                <p>Enlace individual de esta reparación.</p>
+            </div>
+        </div><input id="publicTrackingUrl" value="<?= h($publicUrl) ?>" readonly>
+        <div class="actions" style="margin-top:10px"><button class="btn" type="button" data-copy="<?= h($publicUrl) ?>">Copiar enlace</button><a class="btn" target="_blank" href="track.php?t=<?= h($order['public_token']) ?>">Abrir</a></div>
+        <div class="summary-strip" style="margin-top:18px"><span>Total estimado</span><strong><?= h(money($total)) ?></strong></div><?php if ($order['budget_approved_at']): ?><div class="approval-mini is-approved"><strong>Confirmado por el cliente</strong><span><?= h(date_ar($order['budget_approved_at'], true)) ?> · <?= h(money($order['budget_approved_total'])) ?></span></div><?php elseif ($order['current_status'] === 'Esperando aprobación del cliente' && $items): ?><div class="approval-mini is-pending"><strong>Esperando confirmación</strong><span>El cliente puede aprobar desde su enlace público.</span></div><?php endif; ?>
+    </aside>
 
-<section class="card span7"><div class="card-header"><div><h2>Actualizar reparación</h2><p>Estado, diagnóstico y comunicación al cliente.</p></div></div><form method="post" class="form-grid"><?=csrf_field()?><input type="hidden" name="action" value="update_order"><div class="field span6"><label>Estado</label><select name="status"><?php foreach(STATUSES as $status):?><option value="<?=h($status)?>" <?=$status===$order['current_status']?'selected':''?>><?=h($status)?></option><?php endforeach;?></select></div><div class="field span3"><label>Prioridad</label><select name="priority"><?php foreach(PRIORITIES as $priority):?><option value="<?=h($priority)?>" <?=$priority===$order['priority']?'selected':''?>><?=h(ucfirst($priority))?></option><?php endforeach;?></select></div><div class="field span3"><label>Entrega estimada</label><input type="date" name="estimated_delivery" value="<?=h($order['estimated_delivery'])?>"></div><div class="field"><label>Problema declarado</label><textarea name="problem_reported" required><?=h($order['problem_reported'])?></textarea></div><div class="field"><label>Diagnóstico</label><textarea name="diagnosis" placeholder="Detalle técnico de la revisión"><?=h($order['diagnosis'])?></textarea></div><div class="field span6"><label>Nota interna</label><textarea name="internal_message" placeholder="Solo visible dentro del taller"></textarea></div><div class="field span6"><label>Mensaje para el cliente</label><textarea name="client_message" placeholder="Ej: Terminamos el diagnóstico y aguardamos tu aprobación."></textarea></div><div class="field span4"><label>Total final cobrado</label><input type="number" min="0" step="0.01" name="total_final" value="<?=h($order['total_final'])?>"></div><div class="field span8"><label class="checkline"><input type="checkbox" name="visible_client" checked> Mostrar esta actualización en el seguimiento</label><label class="checkline"><input type="checkbox" name="notify_client" checked> Enviar notificación automática cuando haya mensaje</label></div><div class="form-actions"><button class="btn btn-primary">Guardar actualización</button></div></form></section>
+    <section class="card span7">
+        <div class="card-header">
+            <div>
+                <h2>Actualizar reparación</h2>
+                <p>Estado, diagnóstico y comunicación al cliente.</p>
+            </div>
+        </div>
+        <form method="post" class="form-grid"><?= csrf_field() ?><input type="hidden" name="action" value="update_order">
+            <div class="field span6"><label>Estado</label><select name="status"><?php foreach (STATUSES as $status): ?><option value="<?= h($status) ?>" <?= $status === $order['current_status'] ? 'selected' : '' ?>><?= h($status) ?></option><?php endforeach; ?></select></div>
+            <div class="field span3"><label>Prioridad</label><select name="priority"><?php foreach (PRIORITIES as $priority): ?><option value="<?= h($priority) ?>" <?= $priority === $order['priority'] ? 'selected' : '' ?>><?= h(ucfirst($priority)) ?></option><?php endforeach; ?></select></div>
+            <div class="field span3"><label>Entrega estimada</label><input type="date" name="estimated_delivery" value="<?= h($order['estimated_delivery']) ?>"></div>
+            <div class="field"><label>Problema declarado</label><textarea name="problem_reported" required><?= h($order['problem_reported']) ?></textarea></div>
+            <div class="field"><label>Diagnóstico</label><textarea name="diagnosis" placeholder="Detalle técnico de la revisión"><?= h($order['diagnosis']) ?></textarea></div>
+            <div class="field span6"><label>Nota interna</label><textarea name="internal_message" placeholder="Solo visible dentro del taller"></textarea></div>
+            <div class="field span6"><label>Mensaje para el cliente</label><textarea name="client_message" placeholder="Ej: Terminamos el diagnóstico y aguardamos tu aprobación."></textarea></div>
+            <div class="field span4"><label>Total final cobrado</label><input type="number" min="0" step="0.01" name="total_final" value="<?= h($order['total_final']) ?>"></div>
+            <div class="field span8"><label class="checkline"><input type="checkbox" name="visible_client" checked> Mostrar esta actualización en el seguimiento</label><label class="checkline"><input type="checkbox" name="notify_client" checked> Enviar notificación automática cuando haya mensaje</label></div>
+            <div class="form-actions"><button class="btn btn-primary">Guardar actualización</button></div>
+        </form>
+    </section>
 
-<section class="card span5"><div class="card-header"><div><h2>Historial de avances</h2><p><?=count($updates)?> actualización<?=count($updates)===1?'':'es'?></p></div></div><?php if($updates):?><div class="timeline"><?php foreach($updates as $update):?><div class="event"><strong><?=h($update['status'])?></strong><br><small class="muted"><?=h(date_ar($update['created_at'],true).' · '.($update['user_name']?:'Sistema'))?></small><?php if($update['client_message']):?><p><?=nl2br(h($update['client_message']))?></p><?php elseif($update['internal_message']):?><p class="muted"><?=nl2br(h($update['internal_message']))?></p><?php endif;?></div><?php endforeach;?></div><?php else:?><div class="empty-state"><div><h2>Sin actualizaciones</h2></div></div><?php endif;?></section>
+    <section class="card span5">
+        <div class="card-header">
+            <div>
+                <h2>Historial de avances</h2>
+                <p><?= count($updates) ?> actualización<?= count($updates) === 1 ? '' : 'es' ?></p>
+            </div>
+        </div><?php if ($updates): ?><div class="timeline"><?php foreach ($updates as $update): ?><div class="event"><strong><?= h($update['status']) ?></strong><br><small class="muted"><?= h(date_ar($update['created_at'], true) . ' · ' . ($update['user_name'] ?: 'Sistema')) ?></small><?php if ($update['client_message']): ?><p><?= nl2br(h($update['client_message'])) ?></p><?php elseif ($update['internal_message']): ?><p class="muted"><?= nl2br(h($update['internal_message'])) ?></p><?php endif; ?></div><?php endforeach; ?></div><?php else: ?><div class="empty-state">
+                <div>
+                    <h2>Sin actualizaciones</h2>
+                </div>
+            </div><?php endif; ?>
+    </section>
 
-<section class="card span6"><div class="card-header"><div><h2>Usar repuesto del stock</h2><p>La cantidad se descuenta automáticamente.</p></div></div><form method="post" class="form-grid stock-add-form"><?=csrf_field()?><input type="hidden" name="action" value="add_stock_part"><div class="field"><label class="required">Repuesto</label><select name="part_id" id="partPicker" required><option value="">Seleccionar...</option><?php foreach($parts as $part):?><option value="<?=(int)$part['id']?>" data-name="<?=h($part['name'])?>" data-price="<?=h($part['sell_price'])?>" data-stock="<?=h($part['stock'])?>"><?=h($part['name'].' · Stock '.$part['stock'].' · '.money($part['sell_price']))?></option><?php endforeach;?></select></div><div class="field"><label>Descripción</label><input name="description" id="stockDescription"></div><div class="field span6"><label>Cantidad</label><input type="number" min="0.01" step="0.01" name="quantity" id="stockQuantity" value="1"></div><div class="field span6"><label>Precio venta</label><input type="number" min="0" step="0.01" name="unit_price" id="stockPrice" value="0"></div><div class="form-actions"><button class="btn btn-primary">Agregar y descontar stock</button></div></form></section>
-<section class="card span6"><div class="card-header"><div><h2>Mano de obra u otro concepto</h2><p>Ítems que no modifican el inventario.</p></div></div><form method="post" class="form-grid"><?=csrf_field()?><input type="hidden" name="action" value="budget_add"><div class="field span4"><label>Tipo</label><select name="item_type"><option value="mano_obra">Mano de obra</option><option value="otro">Otro</option></select></div><div class="field span8"><label class="required">Descripción</label><input name="description" required></div><div class="field span6"><label>Cantidad</label><input type="number" min="0.01" step="0.01" name="quantity" value="1"></div><div class="field span6"><label>Precio unitario</label><input type="number" min="0" step="0.01" name="unit_price" value="0"></div><div class="form-actions"><button class="btn btn-primary">Agregar al presupuesto</button></div></form></section>
+    <section class="card span6">
+        <div class="card-header">
+            <div>
+                <h2>Usar repuesto del stock</h2>
+                <p>La cantidad se descuenta automáticamente.</p>
+            </div>
+        </div>
+        <form method="post" class="form-grid stock-add-form"><?= csrf_field() ?><input type="hidden" name="action" value="add_stock_part">
+            <div class="field"><label class="required">Repuesto</label><select name="part_id" id="partPicker" required>
+                    <option value="">Seleccionar...</option><?php foreach ($parts as $part): ?><option value="<?= (int)$part['id'] ?>" data-name="<?= h($part['name']) ?>" data-price="<?= h($part['sell_price']) ?>" data-stock="<?= h($part['stock']) ?>"><?= h($part['name'] . ' · Stock ' . $part['stock'] . ' · ' . money($part['sell_price'])) ?></option><?php endforeach; ?>
+                </select></div>
+            <div class="field"><label>Descripción</label><input name="description" id="stockDescription"></div>
+            <div class="field span6"><label>Cantidad</label><input type="number" min="0.01" step="0.01" name="quantity" id="stockQuantity" value="1"></div>
+            <div class="field span6"><label>Precio venta</label><input type="number" min="0" step="0.01" name="unit_price" id="stockPrice" value="0"></div>
+            <div class="form-actions"><button class="btn btn-primary">Agregar y descontar stock</button></div>
+        </form>
+    </section>
+    <section class="card span6">
+        <div class="card-header">
+            <div>
+                <h2>Mano de obra u otro concepto</h2>
+                <p>Ítems que no modifican el inventario.</p>
+            </div>
+        </div>
+        <form method="post" class="form-grid"><?= csrf_field() ?><input type="hidden" name="action" value="budget_add">
+            <div class="field span4"><label>Tipo</label><select name="item_type">
+                    <option value="mano_obra">Mano de obra</option>
+                    <option value="Repuesto">Repuesto</option>
+                    <option value="otro">Otro</option>
+                </select></div>
+            <div class="field span8"><label class="required">Descripción</label><input name="description" required></div>
+            <div class="field span6"><label>Cantidad</label><input type="number" min="0.01" step="0.01" name="quantity" value="1"></div>
+            <div class="field span6"><label>Precio unitario</label><input type="number" min="0" step="0.01" name="unit_price" value="0"></div>
+            <div class="form-actions"><button class="btn btn-primary">Agregar al presupuesto</button></div>
+        </form>
+    </section>
 
-<section class="card span12" id="budget"><div class="card-header"><div><h2>Presupuesto de la orden</h2><p>Editar cantidades de repuestos ajusta el stock de forma automática.</p></div><div class="kpi" style="font-size:2rem"><?=h(money($total))?></div></div><?php if($items):?><div class="table-wrap responsive"><table><thead><tr><th>Concepto</th><th>Tipo</th><th>Cantidad</th><th>Precio</th><th>Subtotal</th><th></th></tr></thead><tbody><?php foreach($items as $item):?><tr><td class="primary-cell"><div class="table-title"><?php if($item['photo_path']):?><img class="thumb" src="<?=h($item['photo_path'])?>" alt=""><?php endif;?><span><strong><?=h($item['description'])?></strong><?php if($item['part_id']):?><small>Stock disponible: <?=h(number_format((float)$item['current_stock'],2,',','.'))?></small><?php endif;?></span></div></td><td data-label="Tipo"><span class="badge info"><?=h($item['item_type']==='mano_obra'?'Mano de obra':ucfirst($item['item_type']))?></span></td><td data-label="Cantidad"><?=h(number_format((float)$item['quantity'],2,',','.'))?></td><td data-label="Precio"><?=h(money($item['unit_price']))?></td><td data-label="Subtotal"><strong><?=h(money((float)$item['quantity']*(float)$item['unit_price']))?></strong></td><td data-label="Acciones"><div class="table-actions"><button type="button" class="btn btn-sm" onclick="document.getElementById('edit-item-<?=(int)$item['id']?>').toggleAttribute('hidden')">Editar</button><form method="post" data-confirm="¿Eliminar este ítem? Si es un repuesto, volverá al stock."><?=csrf_field()?><input type="hidden" name="action" value="budget_delete"><input type="hidden" name="item_id" value="<?=(int)$item['id']?>"><button class="btn btn-sm btn-danger">Eliminar</button></form></div></td></tr><tr id="edit-item-<?=(int)$item['id']?>" hidden><td colspan="6"><form method="post" class="inline-form"><?=csrf_field()?><input type="hidden" name="action" value="budget_update"><input type="hidden" name="item_id" value="<?=(int)$item['id']?>"><div class="field"><label>Descripción</label><input name="description" value="<?=h($item['description'])?>" required></div><?php if(!$item['part_id']):?><div class="field"><label>Tipo</label><select name="item_type"><option value="mano_obra" <?=$item['item_type']==='mano_obra'?'selected':''?>>Mano de obra</option><option value="otro" <?=$item['item_type']==='otro'?'selected':''?>>Otro</option></select></div><?php endif;?><div class="field"><label>Cantidad</label><input type="number" min="0.01" step="0.01" name="quantity" value="<?=h($item['quantity'])?>"></div><div class="field"><label>Precio</label><input type="number" min="0" step="0.01" name="unit_price" value="<?=h($item['unit_price'])?>"></div><button class="btn btn-primary">Guardar</button></form></td></tr><?php endforeach;?></tbody></table></div><?php else:?><div class="empty-state"><div><div class="empty-icon">$</div><h2>Presupuesto vacío</h2><p class="muted">Agregá repuestos, mano de obra u otros conceptos.</p></div></div><?php endif;?></section>
+    <section class="card span12" id="budget">
+        <div class="card-header">
+            <div>
+                <h2>Presupuesto de la orden</h2>
+                <p>Editar cantidades de repuestos ajusta el stock de forma automática.</p>
+            </div>
+            <div class="kpi" style="font-size:2rem"><?= h(money($total)) ?></div>
+        </div><?php if ($items): ?><div class="table-wrap responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Concepto</th>
+                            <th>Tipo</th>
+                            <th>Cantidad</th>
+                            <th>Precio</th>
+                            <th>Subtotal</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody><?php foreach ($items as $item): ?><tr>
+                                <td class="primary-cell">
+                                    <div class="table-title"><?php if ($item['photo_path']): ?><img class="thumb" src="<?= h($item['photo_path']) ?>" alt=""><?php endif; ?><span><strong><?= h($item['description']) ?></strong><?php if ($item['part_id']): ?><small>Stock disponible: <?= h(number_format((float)$item['current_stock'], 2, ',', '.')) ?></small><?php endif; ?></span></div>
+                                </td>
+                                <td data-label="Tipo"><span class="badge info"><?= h($item['item_type'] === 'mano_obra' ? 'Mano de obra' : ucfirst($item['item_type'])) ?></span></td>
+                                <td data-label="Cantidad"><?= h(number_format((float)$item['quantity'], 2, ',', '.')) ?></td>
+                                <td data-label="Precio"><?= h(money($item['unit_price'])) ?></td>
+                                <td data-label="Subtotal"><strong><?= h(money((float)$item['quantity'] * (float)$item['unit_price'])) ?></strong></td>
+                                <td data-label="Acciones">
+                                    <div class="table-actions"><button type="button" class="btn btn-sm" onclick="document.getElementById('edit-item-<?= (int)$item['id'] ?>').toggleAttribute('hidden')">Editar</button>
+                                        <form method="post" data-confirm="¿Eliminar este ítem? Si es un repuesto, volverá al stock."><?= csrf_field() ?><input type="hidden" name="action" value="budget_delete"><input type="hidden" name="item_id" value="<?= (int)$item['id'] ?>"><button class="btn btn-sm btn-danger">Eliminar</button></form>
+                                    </div>
+                                </td>
+                            </tr>
+                            <tr id="edit-item-<?= (int)$item['id'] ?>" hidden>
+                                <td colspan="6">
+                                    <form method="post" class="inline-form"><?= csrf_field() ?><input type="hidden" name="action" value="budget_update"><input type="hidden" name="item_id" value="<?= (int)$item['id'] ?>">
+                                        <div class="field"><label>Descripción</label><input name="description" value="<?= h($item['description']) ?>" required></div><?php if (!$item['part_id']): ?><div class="field"><label>Tipo</label><select name="item_type">
+                                                    <option value="mano_obra" <?= $item['item_type'] === 'mano_obra' ? 'selected' : '' ?>>Mano de obra</option>
+                                                    <option value="otro" <?= $item['item_type'] === 'otro' ? 'selected' : '' ?>>Otro</option>
+                                                </select></div><?php endif; ?><div class="field"><label>Cantidad</label><input type="number" min="0.01" step="0.01" name="quantity" value="<?= h($item['quantity']) ?>"></div>
+                                        <div class="field"><label>Precio</label><input type="number" min="0" step="0.01" name="unit_price" value="<?= h($item['unit_price']) ?>"></div><button class="btn btn-primary">Guardar</button>
+                                    </form>
+                                </td>
+                            </tr><?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div><?php else: ?><div class="empty-state">
+                <div>
+                    <div class="empty-icon">$</div>
+                    <h2>Presupuesto vacío</h2>
+                    <p class="muted">Agregá repuestos, mano de obra u otros conceptos.</p>
+                </div>
+            </div><?php endif; ?>
+    </section>
 
-<?php if($notifications):?><section class="card span12"><div class="card-header"><div><h2>Notificaciones automáticas</h2><p>Registro de entregas al proveedor configurado.</p></div></div><div class="table-wrap responsive"><table><thead><tr><th>Fecha</th><th>Canal</th><th>Destino</th><th>Estado</th><th>Respuesta</th></tr></thead><tbody><?php foreach($notifications as $notification):?><tr><td class="primary-cell"><strong><?=h(date_ar($notification['created_at'],true))?></strong></td><td data-label="Canal"><?=h($notification['channel'])?></td><td data-label="Destino"><?=h($notification['destination']?:'—')?></td><td data-label="Estado"><span class="badge <?=$notification['status']==='sent'?'success':($notification['status']==='failed'?'danger':'warning')?>"><?=h($notification['status'])?></span></td><td data-label="Respuesta"><small><?=h($notification['provider_response']?:'Pendiente')?></small></td></tr><?php endforeach;?></tbody></table></div></section><?php endif;?>
+    <?php if ($notifications): ?><section class="card span12">
+            <div class="card-header">
+                <div>
+                    <h2>Notificaciones automáticas</h2>
+                    <p>Registro de entregas al proveedor configurado.</p>
+                </div>
+            </div>
+            <div class="table-wrap responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Canal</th>
+                            <th>Destino</th>
+                            <th>Estado</th>
+                            <th>Respuesta</th>
+                        </tr>
+                    </thead>
+                    <tbody><?php foreach ($notifications as $notification): ?><tr>
+                                <td class="primary-cell"><strong><?= h(date_ar($notification['created_at'], true)) ?></strong></td>
+                                <td data-label="Canal"><?= h($notification['channel']) ?></td>
+                                <td data-label="Destino"><?= h($notification['destination'] ?: '—') ?></td>
+                                <td data-label="Estado"><span class="badge <?= $notification['status'] === 'sent' ? 'success' : ($notification['status'] === 'failed' ? 'danger' : 'warning') ?>"><?= h($notification['status']) ?></span></td>
+                                <td data-label="Respuesta"><small><?= h($notification['provider_response'] ?: 'Pendiente') ?></small></td>
+                            </tr><?php endforeach; ?></tbody>
+                </table>
+            </div>
+        </section><?php endif; ?>
 </div>
 <?php include 'partials/footer.php'; ?>
