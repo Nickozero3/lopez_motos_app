@@ -117,7 +117,7 @@ function update_budget_item(PDO $pdo, int $orderId): void
         return;
     }
 
-    $type = in_array(post('item_type'), ['mano_obra', 'otro'], true) ? post('item_type') : 'otro';
+    $type = in_array(post('item_type'), ['mano_obra', 'repuesto', 'otro'], true) ? post('item_type') : 'otro';
     $stmt = $pdo->prepare('UPDATE budget_items SET item_type=?,description=?,quantity=?,unit_price=? WHERE id=? AND order_id=?');
     $stmt->execute([$type, $description, $quantity, $price, $itemId, $orderId]);
 }
@@ -202,7 +202,7 @@ if (is_post()) {
             $description = clean_text(post('description'));
             $quantity = decimal_value(post('quantity'), 1);
             if ($description === '' || $quantity <= 0) throw new RuntimeException('Completá descripción y cantidad.');
-            $type = in_array(post('item_type'), ['mano_obra', 'otro'], true) ? post('item_type') : 'otro';
+            $type = in_array(post('item_type'), ['mano_obra', 'repuesto', 'otro'], true) ? post('item_type') : 'otro';
             $pdo->beginTransaction();
             $stmt = $pdo->prepare('INSERT INTO budget_items(order_id,item_type,description,quantity,unit_price,approved) VALUES(?,?,?,?,?,0)');
             $stmt->execute([$orderId, $type, $description, $quantity, max(0, decimal_value(post('unit_price')))]);
@@ -403,7 +403,7 @@ include 'partials/header.php';
         <form method="post" class="form-grid"><?= csrf_field() ?><input type="hidden" name="action" value="budget_add">
             <div class="field span4"><label>Tipo</label><select name="item_type">
                     <option value="mano_obra">Mano de obra</option>
-                    <option value="Repuesto">Repuesto</option>
+                    <option value="repuesto">Repuesto</option>
                     <option value="otro">Otro</option>
                 </select></div>
             <div class="field span8"><label class="required">Descripción</label><input name="description" required></div>
@@ -436,7 +436,7 @@ include 'partials/header.php';
                                 <td class="primary-cell">
                                     <div class="table-title"><?php if ($item['photo_path']): ?><img class="thumb" src="<?= h($item['photo_path']) ?>" alt=""><?php endif; ?><span><strong><?= h($item['description']) ?></strong><?php if ($item['part_id']): ?><small>Stock disponible: <?= h(number_format((float)$item['current_stock'], 2, ',', '.')) ?></small><?php endif; ?></span></div>
                                 </td>
-                                <td data-label="Tipo"><span class="badge info"><?= h($item['item_type'] === 'mano_obra' ? 'Mano de obra' : ucfirst($item['item_type'])) ?></span></td>
+                                <td data-label="Tipo"><span class="badge info"><?= h(strtolower((string)$item['item_type']) === 'mano_obra' ? 'Mano de obra' : ucfirst(strtolower((string)$item['item_type']))) ?></span></td>
                                 <td data-label="Cantidad"><?= h(number_format((float)$item['quantity'], 2, ',', '.')) ?></td>
                                 <td data-label="Precio"><?= h(money($item['unit_price'])) ?></td>
                                 <td data-label="Subtotal"><strong><?= h(money((float)$item['quantity'] * (float)$item['unit_price'])) ?></strong></td>
@@ -451,7 +451,7 @@ include 'partials/header.php';
                                     <form method="post" class="inline-form"><?= csrf_field() ?><input type="hidden" name="action" value="budget_update"><input type="hidden" name="item_id" value="<?= (int)$item['id'] ?>">
                                         <div class="field"><label>Descripción</label><input name="description" value="<?= h($item['description']) ?>" required></div><?php if (!$item['part_id']): ?><div class="field"><label>Tipo</label><select name="item_type">
                                                     <option value="mano_obra" <?= $item['item_type'] === 'mano_obra' ? 'selected' : '' ?>>Mano de obra</option>
-                                                    <option value="Repuesto" <?= $item['item_type'] === 'Repuesto' ? 'selected' : '' ?>>Repuesto</option>
+                                                    <option value="repuesto" <?= strtolower((string)$item['item_type']) === 'repuesto' ? 'selected' : '' ?>>Repuesto</option>
                                                     <option value="otro" <?= $item['item_type'] === 'otro' ? 'selected' : '' ?>>Otro</option>
                                                 </select></div><?php endif; ?><div class="field"><label>Cantidad</label><input type="number" min="0.01" step="0.01" name="quantity" value="<?= h($item['quantity']) ?>"></div>
                                         <div class="field"><label>Precio</label><input type="number" min="0" step="0.01" name="unit_price" value="<?= h($item['unit_price']) ?>"></div><button class="btn btn-primary">Guardar</button>
