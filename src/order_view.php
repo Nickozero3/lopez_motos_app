@@ -404,24 +404,77 @@ include 'partials/header.php';
         <div class="summary-strip" style="margin-top:18px"><span>Total estimado</span><strong><?= h(money($total)) ?></strong></div><?php if ($order['budget_approved_at']): ?><div class="approval-mini is-approved"><strong>Confirmado por el cliente</strong><span><?= h(date_ar($order['budget_approved_at'], true)) ?> · <?= h(money($order['budget_approved_total'])) ?></span></div><?php elseif ($order['current_status'] === 'Esperando aprobación del cliente' && $items): ?><div class="approval-mini is-pending"><strong>Esperando confirmación</strong><span>El cliente puede aprobar desde su enlace público.</span></div><?php endif; ?>
     </aside>
 
-    <section class="card span7">
-        <div class="card-header">
+    <section class="card span7 order-update-card" id="update-repair">
+        <div class="card-header order-update-heading">
             <div>
+                <span class="order-section-kicker">GESTIÓN DE LA ORDEN</span>
                 <h2>Actualizar reparación</h2>
-                <p>Estado, diagnóstico y comunicación al cliente.</p>
+                <p>Seguí estos pasos en orden. Solo completá lo que haya cambiado.</p>
             </div>
         </div>
-        <form method="post" class="form-grid"><?= csrf_field() ?><input type="hidden" name="action" value="update_order">
-            <div class="field span6"><label>Estado</label><select name="status"><?php foreach (STATUSES as $status): ?><option value="<?= h($status) ?>" <?= $status === $order['current_status'] ? 'selected' : '' ?>><?= h($status) ?></option><?php endforeach; ?></select></div>
-            <div class="field span3"><label>Prioridad</label><select name="priority"><?php foreach (PRIORITIES as $priority): ?><option value="<?= h($priority) ?>" <?= $priority === $order['priority'] ? 'selected' : '' ?>><?= h(ucfirst($priority)) ?></option><?php endforeach; ?></select></div>
-            <div class="field span3"><label>Entrega estimada</label><input type="date" name="estimated_delivery" value="<?= h($order['estimated_delivery']) ?>"></div>
-            <div class="field"><label>Problema declarado</label><textarea name="problem_reported" required><?= h($order['problem_reported']) ?></textarea></div>
-            <div class="field"><label>Diagnóstico</label><textarea name="diagnosis" placeholder="Detalle técnico de la revisión"><?= h($order['diagnosis']) ?></textarea></div>
-            <div class="field span6"><label>Nota interna</label><textarea name="internal_message" placeholder="Solo visible dentro del taller"></textarea></div>
-            <div class="field span6"><label>Mensaje para el cliente</label><textarea name="client_message" placeholder="Ej: Terminamos el diagnóstico y aguardamos tu aprobación."></textarea></div>
-            <div class="field span4"><label>Total final cobrado</label><input type="number" min="0" step="1" inputmode="numeric" name="total_final" value="<?= h((int)$order['total_final']) ?>"></div>
-            <div class="field span8"><label class="checkline"><input type="checkbox" name="visible_client" checked> Mostrar esta actualización en el seguimiento</label><label class="checkline"><input type="checkbox" name="notify_client" checked> Enviar notificación automática cuando haya mensaje</label></div>
-            <div class="form-actions"><button class="btn btn-primary">Guardar actualización</button></div>
+
+        <div class="order-howto" role="note">
+            <strong>Cómo actualizar esta orden</strong>
+            <ol>
+                <li>Elegí el estado actual de la moto.</li>
+                <li>Contá qué revisaste o qué trabajo realizaste.</li>
+                <li>Si hace falta, escribí un mensaje para el cliente y guardá.</li>
+            </ol>
+        </div>
+
+        <form method="post" class="form-grid order-update-form" id="orderUpdateForm"><?= csrf_field() ?><input type="hidden" name="action" value="update_order">
+            <div class="order-step-label span12">
+                <span class="order-step-number">1</span>
+                <div><strong>Estado de la reparación</strong><small>Elegí la etapa en la que se encuentra la moto ahora.</small></div>
+            </div>
+            <div class="field span12 order-status-field">
+                <label for="repairStatus">Estado actual</label>
+                <select name="status" id="repairStatus"><?php foreach (STATUSES as $status): ?><option value="<?= h($status) ?>" <?= $status === $order['current_status'] ? 'selected' : '' ?>><?= h($status) ?></option><?php endforeach; ?></select>
+                <div class="order-status-explanation" id="repairStatusHelp" aria-live="polite">Elegí el estado que mejor describe el avance actual.</div>
+            </div>
+
+            <div class="order-step-label span12">
+                <span class="order-step-number">2</span>
+                <div><strong>Qué se revisó o se hizo</strong><small>Dejá un registro claro para vos y para quien continúe el trabajo.</small></div>
+            </div>
+            <div class="field span12">
+                <label for="repairDiagnosis">Diagnóstico o trabajo realizado</label>
+                <textarea id="repairDiagnosis" name="diagnosis" rows="4" placeholder="Ej.: Se revisó el encendido, se cambió la bujía y la moto arrancó correctamente."><?= h($order['diagnosis']) ?></textarea>
+                <span class="help">Si todavía no se hizo ningún trabajo, podés dejar este campo como está.</span>
+            </div>
+
+            <div class="order-step-label span12">
+                <span class="order-step-number">3</span>
+                <div><strong>¿Hay que avisarle algo al cliente?</strong><small>Este paso es opcional. Si no corresponde, dejá el mensaje vacío.</small></div>
+            </div>
+            <div class="field span12">
+                <label for="repairClientMessage">Mensaje para el cliente</label>
+                <textarea id="repairClientMessage" name="client_message" rows="3" placeholder="Ej.: Encontramos el problema. Te pasamos el presupuesto antes de comenzar la reparación."></textarea>
+                <span class="help">Escribí un mensaje breve y claro. Se enviará una notificación si está activada la opción de envío.</span>
+            </div>
+            <div class="field span12 order-notification-options">
+                <label class="checkline"><input type="checkbox" name="visible_client" checked> Mostrar este avance en el seguimiento del cliente</label>
+                <label class="checkline"><input type="checkbox" name="notify_client" checked> Enviar notificación si escribí un mensaje</label>
+            </div>
+
+            <details class="order-advanced span12">
+                <summary><span><strong>Opciones adicionales</strong><small>Prioridad, entrega, problema inicial, nota interna y total final</small></span></summary>
+                <div class="form-grid order-advanced-content">
+                    <div class="field span6"><label>Prioridad</label><select name="priority"><?php foreach (PRIORITIES as $priority): ?><option value="<?= h($priority) ?>" <?= $priority === $order['priority'] ? 'selected' : '' ?>><?= h(ucfirst($priority)) ?></option><?php endforeach; ?></select><span class="help">Usá urgente solo si requiere atención inmediata.</span></div>
+                    <div class="field span6"><label>Fecha estimada de entrega</label><input type="date" name="estimated_delivery" value="<?= h($order['estimated_delivery']) ?>"><span class="help">Es una fecha aproximada; podés dejarla sin cambios.</span></div>
+                    <div class="field span12"><label>Problema declarado por el cliente</label><textarea name="problem_reported" rows="3"><?= h($order['problem_reported']) ?></textarea><span class="help">Modificá este texto solo si necesitás corregir lo que se registró al recibir la moto.</span></div>
+                    <div class="field span12"><label>Nota interna <span class="muted">(solo para el taller)</span></label><textarea name="internal_message" rows="2" placeholder="Ej.: Consultar precio de repuesto con proveedor."></textarea><span class="help">Esta nota no se envía al cliente.</span></div>
+                    <div class="field span12"><label>Total final cobrado</label><input type="number" min="0" step="1" inputmode="numeric" name="total_final" value="<?= h((int)$order['total_final']) ?>"><span class="help">Completalo cuando tengas el importe final. No reemplaza los ítems del presupuesto.</span></div>
+                </div>
+            </details>
+
+            <div class="order-save-reminder span12">
+                <span class="order-reminder-icon" aria-hidden="true">ℹ</span>
+                <span><strong>Antes de guardar:</strong> revisá el estado y el mensaje. Los cambios se registran en el historial de avances.</span>
+            </div>
+            <div class="form-actions span12 order-update-actions">
+                <button class="btn btn-primary" type="submit">Guardar cambios de la orden</button>
+            </div>
         </form>
     </section>
 
@@ -531,17 +584,9 @@ include 'partials/header.php';
             </div><?php endif; ?>
     </section>
 
-    <section class="card span12" id="reception"><div class="card-header"><div><h2>Recepción de la moto</h2><p>Checklist de ingreso, accesorios, llaves y fotos.</p></div></div>
-      <form method="post" enctype="multipart/form-data" class="form-grid"><?=csrf_field()?><input type="hidden" name="action" value="save_reception"><div class="field span3"><label>Combustible</label><select name="fuel_level"><?php foreach(['no_indicado'=>'No indicado','reserva'=>'Reserva','1/4'=>'1/4','1/2'=>'1/2','3/4'=>'3/4','lleno'=>'Lleno'] as $fv=>$fl):?><option value="<?=h($fv)?>" <?=($reception['fuel_level']??'no_indicado')===$fv?'selected':''?>><?=h($fl)?></option><?php endforeach;?></select></div><div class="field span3"><label>Llaves recibidas</label><input type="number" min="0" name="keys_count" value="<?=h($reception['keys_count']??1)?>"></div><div class="field span6"><label>Accesorios / pertenencias</label><input name="accessories" value="<?=h($reception['accessories']??'') ?>" placeholder="Baúl, casco, espejos, etc."></div><div class="field span12"><label>Observaciones de recepción</label><textarea name="reception_notes" placeholder="Rayones, golpes, estado general..."><?=h($reception['reception_notes']??'')?></textarea></div><?php for($pi=1;$pi<=4;$pi++):?><div class="field span3"><label>Foto <?=$pi?></label><input type="file" name="photo<?=$pi?>" accept="image/jpeg,image/png,image/webp" capture="environment"><?php if(!empty($reception['photo'.$pi])):?><img class="part-preview" src="<?=h($reception['photo'.$pi])?>" alt="Foto de recepción"><?php endif;?></div><?php endfor;?><div class="form-actions"><button class="btn btn-primary">Guardar recepción</button></div></form></section>
-    <section class="card span6" id="payments">
-        <div class="card-header"><div><h2>Pagos y saldo</h2><p>Total: <strong><?=h(money($order['total_final']>0?$order['total_final']:$paymentTotals['total']))?></strong> · Pagado: <strong><?=h(money($paymentTotals['paid']))?></strong></p></div><a class="btn btn-sm" target="_blank" href="receipt.php?id=<?= (int)$orderId ?>">Comprobante</a></div>
-        <div class="metric-row"><div class="metric-box"><small class="muted">Saldo</small><strong><?=h(money(max(0,($order['total_final']>0?(int)$order['total_final']:$paymentTotals['total'])-$paymentTotals['paid'])))?></strong></div><div class="metric-box"><small class="muted">Pagos</small><strong><?=count($payments)?></strong></div></div>
-        <form method="post" class="form-grid" style="margin-top:14px"><?=csrf_field()?><input type="hidden" name="action" value="register_payment"><div class="field"><label>Monto</label><input name="amount" inputmode="numeric" required></div><div class="field"><label>Método</label><select name="method"><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia</option><option value="tarjeta">Tarjeta</option><option value="mercadopago">Mercado Pago</option><option value="otro">Otro</option></select></div><div class="field"><label>Referencia</label><input name="reference" placeholder="N.º operación"></div><div class="field"><label>Notas</label><input name="notes"></div><button class="btn btn-primary">Registrar pago</button></form>
-        <?php if($payments):?><div class="timeline" style="margin-top:14px"><?php foreach($payments as $pay):?><div class="event"><strong><?=h(money($pay['amount']))?> · <?=h(payment_method_label($pay['method']))?></strong><small class="muted"><?=h(date_ar($pay['paid_at'],true).' · '.($pay['user_name']?:'Sistema'))?></small><?php if($pay['reference']):?><span><?=h($pay['reference'])?></span><?php endif;?><form method="post" data-confirm="¿Eliminar este pago?"><?=csrf_field()?><input type="hidden" name="action" value="delete_payment"><input type="hidden" name="payment_id" value="<?=h($pay['id'])?>"><button class="btn btn-sm btn-danger">Eliminar</button></form></div><?php endforeach;?></div><?php endif;?>
-    </section>
-    <section class="card span6" id="service"><div class="card-header"><div><h2>Próximo service</h2><p>Recordatorios asociados a esta moto.</p></div></div>
-      <form method="post" class="form-grid"><?=csrf_field()?><input type="hidden" name="action" value="add_service_reminder"><div class="field"><label>Próximo km</label><input type="number" min="0" name="reminder_km" value="<?=h(((int)$order['km'])+5000)?>"></div><div class="field"><label>Fecha</label><input type="date" name="reminder_date"></div><div class="field"><label>Notas</label><input name="service_notes" placeholder="Ej: cambio de aceite y filtro"></div><button class="btn btn-primary">Crear recordatorio</button></form>
-      <?php if($reminders):?><div class="timeline" style="margin-top:14px"><?php foreach($reminders as $r):?><div class="event"><strong><?=h($r['reminder_km']?units($r['reminder_km']).' km':'Service por fecha')?></strong><small class="muted"><?=h($r['reminder_date']?date_ar($r['reminder_date']):'Sin fecha')?></small><span><?=h($r['notes']?:'Sin detalle')?></span><form method="post"><?=csrf_field()?><input type="hidden" name="action" value="complete_service_reminder"><input type="hidden" name="reminder_id" value="<?=h($r['id'])?>"><button class="btn btn-sm">Marcar cumplido</button></form></div><?php endforeach;?></div><?php else:?><p class="muted" style="margin-top:14px">No hay recordatorios pendientes.</p><?php endif;?></section>
+    
+    
+    
 
     <?php if ($notifications): ?><section class="card span12">
             <div class="card-header">
